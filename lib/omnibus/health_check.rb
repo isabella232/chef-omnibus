@@ -186,7 +186,7 @@ module Omnibus
     end
 
     def self.health_check_otool(install_dir)
-      otool_cmd = "find #{install_dir}/ -type f | egrep '\.(dylib|bundle)$' | xargs otool -L > otool.out 2>/dev/null"
+      otool_cmd = "find #{install_dir}/ -type f | egrep '\.(dylib|bundle|so)$' | xargs otool -L > otool.out 2>/dev/null"
       log "Executing `#{otool_cmd}`"
       shell = Mixlib::ShellOut.new(otool_cmd, :timeout => 3600)
       shell.run_command
