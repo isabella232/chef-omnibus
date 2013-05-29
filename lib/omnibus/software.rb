@@ -20,6 +20,7 @@ require 'mixlib/shellout'
 require 'net/ftp'
 require 'net/http'
 require 'net/https'
+require 'pathname'
 require 'uri'
 
 require 'omnibus/fetcher'
@@ -269,6 +270,10 @@ module Omnibus
     #   logical grouping
     def project_dir
       @relative_path ? "#{source_dir}/#{@relative_path}" : "#{source_dir}/#{@name}"
+    end
+
+    def patch_dir
+      Pathname.new(@source_config).dirname.dirname.join('patches', name).to_s
     end
 
     # @todo all the *_file methods should be next to each other for
