@@ -103,6 +103,8 @@ module Omnibus
                           /CoreFoundation/,
                           /Tcl$/,
                           /Cocoa$/,
+                          /CoreServices$/,
+                          /ApplicationServices$/,
                           /Carbon$/,
                           /IOKit$/,
                           /Tk$/,
@@ -110,7 +112,8 @@ module Omnibus
                           /libffi\.dylib/,
                           /libncurses\.5\.4\.dylib/,
                           /libiconv/,
-                          /libstdc\+\+\.6\.dylib/
+                          /libstdc\+\+\.6\.dylib/,
+                          /libgcc_s\.1\.dylib$/,
                          ]
 
     FREEBSD_WHITELIST_LIBS = [

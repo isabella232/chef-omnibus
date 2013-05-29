@@ -20,6 +20,7 @@ require 'mixlib/shellout'
 require 'net/ftp'
 require 'net/http'
 require 'net/https'
+require 'pathname'
 require 'uri'
 
 require 'omnibus/fetcher'
@@ -96,6 +97,11 @@ module Omnibus
     def name(val=NULL_ARG)
       @name = val unless val.equal?(NULL_ARG)
       @name
+    end
+
+    # Name, safe to use as a filename base
+    def safe_name
+      @safe_name ||= safe_name_from(name)
     end
 
     def description(val)
@@ -268,7 +274,11 @@ module Omnibus
     # @todo Move this up with the other *_dir methods for better
     #   logical grouping
     def project_dir
-      @relative_path ? "#{source_dir}/#{@relative_path}" : "#{source_dir}/#{@name}"
+      @relative_path ? "#{source_dir}/#{@relative_path}" : "#{source_dir}/#{safe_name}"
+    end
+
+    def patch_dir
+      Pathname.new(@source_config).dirname.dirname.join('patches', name).to_s
     end
 
     # @todo all the *_file methods should be next to each other for
@@ -280,7 +290,7 @@ module Omnibus
     # @todo Seems like this should be a private method, since it's
     #   just used internally
     def manifest_file_from_name(software_name)
-      "#{build_dir}/#{software_name}.manifest"
+      "#{build_dir}/#{safe_name_from(software_name)}.manifest"
     end
 
     # The name of the sentinel file that marks the most recent fetch
@@ -292,7 +302,7 @@ module Omnibus
     # @todo seems like this should be a private
     #   method, since it's an implementation detail.
     def fetch_file
-      "#{build_dir}/#{@name}.fetch"
+      "#{build_dir}/#{safe_name}.fetch"
     end
 
     # @todo This is actually "snake case", not camel case
@@ -328,6 +338,35 @@ module Omnibus
       @builder = Builder.new(self, &block)
     end
 
+    # Define another piece of software in-line, in the same file.
+    #
+    # Use this when you need to compose a single software out of
+    # multiple sources (e.g. use an inline static library that needs
+    # to be downloaded separately).
+    #
+    # @param name [String] Name of the inline software
+    # @param block [block] Definition
+    # @return [Hash] Hash of already defined inline software, if name
+    #   was not provided; created inline `Software` instance otherwise.
+    def inline(name=nil, &block)
+      @inline ||= {}
+      return @inline unless name
+
+      # Create a child Software instance
+      child = Software.new "name #{[self.name, name].join(':').inspect}",
+                           @source_config,
+                           project
+      child.instance_eval(&block)
+      child.instance_eval do
+        build # <- this should not be necessary
+        render_tasks
+      end
+
+      dependency child.name
+      @inline[name] = child
+    end
+
+
     # Returns the platform of the machine on which Omnibus is running,
     # as determined by Ohai.
     #
@@ -344,6 +383,11 @@ module Omnibus
     end
 
     private
+
+    # Sanitize `name` to be safe to use as a file name
+    def safe_name_from(name)
+      name.gsub(/[^a-zA-Z0-9_.-]+/, '__')
+    end
 
     # @todo What?!
     # @todo It seems that this is not used... remove it

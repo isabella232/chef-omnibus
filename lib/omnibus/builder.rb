@@ -130,6 +130,7 @@ module Omnibus
       candidate_paths = candidate_roots.map do |root|
         File.expand_path("#{root}/config/patches/#{name}/#{args[:source]}")
       end
+      candidate_paths.unshift(File.expand_path("#{@software.patch_dir}/#{args[:source]}"))
 
       source = candidate_paths.find{|path| File.exists?(path) }
 

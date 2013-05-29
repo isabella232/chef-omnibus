@@ -234,16 +234,14 @@ module Omnibus
   end
 
   # Retrieve the fully-qualified paths to every software definition
-  # file bundled in the {https://github.com/opscode/omnibus-software omnibus-software} gem.
+  # file bundled in other gems.
   #
   # @return [Array<String>] the list of paths. Will be empty if the
   #   `omnibus-software` gem is not in the gem path.
   def self.omnibus_software_files
-    if omnibus_software_root
-      Dir.glob(File.join(omnibus_software_root, 'config', 'software', '*.rb'))
-    else
-      []
-    end
+    Array( Gem::Specification.flat_map do |gem|
+             Dir[ File.join(gem.gem_dir, "config/software/*.rb") ]
+           end )
   end
 
   # Given a list of software definitions from `omnibus-software` itself, and a
