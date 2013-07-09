@@ -16,6 +16,7 @@
 #
 
 require 'forwardable'
+require 'omnibus/exceptions'
 
 module Omnibus
   class Builder
@@ -133,6 +134,10 @@ module Omnibus
       candidate_paths.unshift(File.expand_path("#{@software.patch_dir}/#{args[:source]}"))
 
       source = candidate_paths.find{|path| File.exists?(path) }
+
+      unless source
+        raise MissingPatch.new(args[:source], candidate_paths)
+      end
 
       plevel = args[:plevel] || 1
       if args[:target] 
