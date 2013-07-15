@@ -123,6 +123,7 @@ module Omnibus
                           /libffi\.dylib/,
                           /libncurses\.5\.4\.dylib/,
                           /libiconv/,
+                          /libicucore(?:\.A)?\.dylib$/,
                           /libstdc\+\+\.6\.dylib/,
                           /libgcc_s\.1\.dylib$/,
                          ]
