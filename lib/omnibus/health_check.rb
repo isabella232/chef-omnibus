@@ -136,25 +136,18 @@ module Omnibus
                                /libutil\.so/
                               ]
 
-    WHITELIST_FILES = [
-                       /jre\/bin\/javaws/,
-                       /jre\/bin\/policytool/,
-                       /jre\/lib/,
-                       /jre\/plugin/
-                      ]
-
     def self.log(msg)
       puts "[health_check] #{msg}"
     end
 
-    def self.run(install_dir)
+    def self.run(install_dir, whitelist_files = [])
       case OHAI.platform
       when "mac_os_x"
-        bad_libs = health_check_otool(install_dir)
+        bad_libs = health_check_otool(install_dir, whitelist_files)
       when "aix"
-        bad_libs = health_check_aix(install_dir)
+        bad_libs = health_check_aix(install_dir, whitelist_files)
       else
-        bad_libs = health_check_ldd(install_dir)
+        bad_libs = health_check_ldd(install_dir, whitelist_files)
       end
 
       unresolved = []
@@ -202,7 +195,7 @@ module Omnibus
       end
     end
 
-    def self.health_check_otool(install_dir)
+    def self.health_check_otool(install_dir, whitelist_files)
       otool_cmd = "find #{install_dir}/ -type f | egrep '\.(dylib|bundle|so)$' | xargs otool -L > otool.out 2>/dev/null"
       log "Executing `#{otool_cmd}`"
       shell = Mixlib::ShellOut.new(otool_cmd, :timeout => 3600)
@@ -220,7 +213,7 @@ module Omnibus
         when /^\s+(.+) \(.+\)$/
           linked = $1
           name = File.basename(linked)
-          bad_libs = check_for_bad_library(install_dir, bad_libs, current_library, name, linked)
+          bad_libs = check_for_bad_library(install_dir, bad_libs, whitelist_files, current_library, name, linked)
         end
       end
 
@@ -229,7 +222,7 @@ module Omnibus
       bad_libs
     end
 
-    def self.check_for_bad_library(install_dir, bad_libs, current_library, name, linked)
+    def self.check_for_bad_library(install_dir, bad_libs, whitelist_files, current_library, name, linked)
       safe = nil
 
       whitelist_libs = case OHAI.platform
@@ -251,7 +244,7 @@ module Omnibus
       whitelist_libs.each do |reg|
         safe ||= true if reg.match(name)
       end
-      WHITELIST_FILES.each do |reg|
+      whitelist_files.each do |reg|
         safe ||= true if reg.match(current_library)
       end
 
@@ -274,7 +267,7 @@ module Omnibus
       bad_libs
     end
 
-    def self.health_check_aix(install_dir)
+    def self.health_check_aix(install_dir, whitelist_files)
       #
       # ShellOut has GC turned off during execution, so when we're
       # executing extremely long commands with lots of output, we
@@ -300,7 +293,7 @@ module Omnibus
         when /^\s+(.+)$/
           name = $1
           linked = $1
-          bad_libs = check_for_bad_library(install_dir, bad_libs, current_library, name, linked)
+          bad_libs = check_for_bad_library(install_dir, bad_libs, whitelist_files, current_library, name, linked)
         when /File is not an executable XCOFF file/ # ignore non-executable files
         else
           log "*** Line did not match for #{current_library}\n#{line}"
@@ -311,7 +304,7 @@ module Omnibus
       bad_libs
     end
 
-    def self.health_check_ldd(install_dir)
+    def self.health_check_ldd(install_dir, whitelist_files)
       #
       # ShellOut has GC turned off during execution, so when we're
       # executing extremely long commands with lots of output, we
@@ -337,7 +330,7 @@ module Omnibus
         when /^\s+(.+) \=\>\s+(.+)( \(.+\))?$/
           name = $1
           linked = $2
-          bad_libs = check_for_bad_library(install_dir, bad_libs, current_library, name, linked)
+          bad_libs = check_for_bad_library(install_dir, bad_libs, whitelist_files, current_library, name, linked)
         when /^\s+(.+) \(.+\)$/
           next
         when /^\s+statically linked$/
