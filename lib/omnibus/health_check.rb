@@ -44,6 +44,7 @@ module Omnibus
                            /libffi\.so/,
                            /libgdbm\.so/,
                            /libm\.so/,
+                           /libnsl\.so/,
                            /libpthread\.so/,
                            /librt\.so/,
                            /libutil\.so/
@@ -192,7 +193,7 @@ module Omnibus
           log "      PROVIDED BY: #{location}"
           log "      FAILED BECAUSE: #{reason}"
         end
-	raise "Health Check Failed"
+        raise "Health Check Failed"
       end
     end
 
