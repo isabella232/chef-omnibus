@@ -32,6 +32,7 @@ module Omnibus
                       /librt\.so/,
                       /libstdc\+\+\.so/,
                       /libutil\.so/,
+                      /libz\.so\.1/,
                       /linux-vdso.+/,
                       /linux-gate\.so/
                      ]
@@ -127,6 +128,7 @@ module Omnibus
                           /libicucore(?:\.A)?\.dylib$/,
                           /libstdc\+\+\.6\.dylib/,
                           /libgcc_s\.1\.dylib$/,
+                          /libz\.1\.dylib$/
                          ]
 
     FREEBSD_WHITELIST_LIBS = [
