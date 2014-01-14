@@ -18,6 +18,7 @@ require 'omnibus/artifact'
 require 'omnibus/exceptions'
 require 'omnibus/library'
 require 'omnibus/util'
+require 'time'
 
 module Omnibus
 
@@ -65,6 +66,7 @@ module Omnibus
 
       @exclusions = Array.new
       @conflicts = Array.new
+      @config_files = Array.new
       @dependencies = Array.new
       @runtime_dependencies = Array.new
       instance_eval(io)
@@ -240,6 +242,24 @@ module Omnibus
       @build_iteration || 1
     end
 
+    # Set or retrieve the {deb/rpm/solaris}-user fpm argument.
+    #
+    # @param val [String]
+    # @return [String]
+    def package_user(val=NULL_ARG)
+      @pkg_user = val unless val.equal?(NULL_ARG)
+      @pkg_user
+    end
+
+    # Set or retrieve the {deb/rpm/solaris}-group fpm argument.
+    #
+    # @param val [String]
+    # @return [String]
+    def package_group(val=NULL_ARG)
+      @pkg_group = val unless val.equal?(NULL_ARG)
+      @pkg_group
+    end
+
     # Add an Omnibus software dependency.
     #
     # Note that this is a *build time* dependency.  If you need to
@@ -293,6 +313,14 @@ module Omnibus
     # @return void
     def exclude(pattern)
       @exclusions << pattern
+    end
+
+    # Add a config file.
+    #
+    # @param val [String] the name of a config file of your software
+    # @return [void]
+    def config_file(val)
+      @config_files << val
     end
 
     # Returns the platform version of the machine on which Omnibus is
@@ -381,7 +409,7 @@ module Omnibus
       when 'aix'
         [ "bff" ]
       when 'solaris2'
-        [ "solaris" ]
+        [ "pkgmk" ]
       when 'windows'
         [ "msi" ]
       else
@@ -461,6 +489,8 @@ module Omnibus
         "#{package_name}-#{build_version}-#{iteration}.msi"
       when "bff"
         "#{package_name}.#{bff_version}.bff"
+      when "pkgmk"
+        "#{package_name}-#{build_version}-#{iteration}.solaris"
       else # fpm
         require "fpm/package/#{pkg_type}"
         pkg = FPM::Package.types[pkg_type].new
@@ -503,9 +533,10 @@ module Omnibus
     end
 
     def bff_command
-      bff_command = ["mkinstallp -d / -T /tmp/bff/gen.template"]
+      bff_command = ["sudo /usr/sbin/mkinstallp -d / -T /tmp/bff/gen.template"]
       [bff_command.join(" "), {:returns => [0]}]
     end
+
 
     # The {https://github.com/jordansissel/fpm fpm} command to
     # generate a package for RedHat, Ubuntu, Solaris, etc. platforms.
@@ -532,20 +563,28 @@ module Omnibus
                           "-m '#{maintainer}'",
                           "--description '#{description}'",
                           "--url #{homepage}"]
+      if File.exist?(File.join(package_scripts_path, "preinst"))
+        command_and_opts << "--before-install '#{File.join(package_scripts_path, "preinst")}'"
+      end
+
       if File.exist?("#{package_scripts_path}/postinst")
-        command_and_opts << "--post-install '#{package_scripts_path}/postinst'"
+        command_and_opts << "--after-install '#{File.join(package_scripts_path, "postinst")}'"
       end
       # solaris packages don't support --pre-uninstall
-      if File.exist?("#{package_scripts_path}/prerm") && pkg_type != "solaris"
-        command_and_opts << "--pre-uninstall '#{package_scripts_path}/prerm'"
+      if File.exist?("#{package_scripts_path}/prerm")
+        command_and_opts << "--before-remove '#{File.join(package_scripts_path, "prerm")}'"
       end
       # solaris packages don't support --post-uninstall
-      if File.exist?("#{package_scripts_path}/postrm") && pkg_type != "solaris"
-        command_and_opts << "--post-uninstall '#{package_scripts_path}/postrm'"
+      if File.exist?("#{package_scripts_path}/postrm")
+        command_and_opts << "--after-remove '#{File.join(package_scripts_path, "postrm")}'"
       end
 
       @exclusions.each do |pattern|
         command_and_opts << "--exclude '#{pattern}'"
+      end
+      
+      @config_files.each do |config_file|
+        command_and_opts << "--config-files '#{config_file}'"
       end
 
       @runtime_dependencies.each do |runtime_dep|
@@ -554,6 +593,18 @@ module Omnibus
 
       @conflicts.each do |conflict|
         command_and_opts << "--conflicts '#{conflict}'"
+      end
+
+      if @pkg_user
+        %w[ deb rpm solaris ].each do |type|
+          command_and_opts << " --#{type}-user #{@pkg_user}"
+        end
+      end
+
+      if @pkg_group
+        %w[ deb rpm solaris ].each do |type|
+          command_and_opts << " --#{type}-group #{@pkg_group}"
+        end
       end
 
       command_and_opts << " --replaces #{@replaces}" if @replaces
@@ -602,7 +653,7 @@ module Omnibus
     end
 
     def run_bff
-      FileUtils.rm_rf "/.info"
+      FileUtils.rm_rf "/.info/*"
       FileUtils.rm_rf "/tmp/bff"
       FileUtils.mkdir "/tmp/bff"
 
@@ -619,6 +670,65 @@ module Omnibus
       run_package_command(bff_command)
 
       FileUtils.cp "/tmp/chef.#{bff_version}.bff", "/var/cache/omnibus/pkg/chef.#{bff_version}.bff"
+    end
+
+    def pkgmk_version
+      "#{build_version}-#{iteration}"
+    end
+
+    def run_pkgmk
+      install_dirname = File.dirname(install_path)
+      install_basename = File.basename(install_path)
+
+      system "sudo rm -rf /tmp/pkgmk"
+      FileUtils.mkdir "/tmp/pkgmk"
+
+      system "cd #{install_dirname} && find #{install_basename} -print > /tmp/pkgmk/files"
+
+      prototype_content = <<-EOF
+i pkginfo
+i postinstall
+i postremove
+      EOF
+
+      File.open "/tmp/pkgmk/Prototype", "w+" do |f|
+        f.write prototype_content
+      end
+
+      # generate the prototype's file list
+      system "cd #{install_dirname} && pkgproto < /tmp/pkgmk/files > /tmp/pkgmk/Prototype.files"
+
+      # fix up the user and group in the file list to root
+      system "awk '{ $5 = \"root\"; $6 = \"root\"; print }' < /tmp/pkgmk/Prototype.files >> /tmp/pkgmk/Prototype"
+
+      pkginfo_content = <<-EOF
+CLASSES=none
+TZ=PST
+PATH=/sbin:/usr/sbin:/usr/bin:/usr/sadm/install/bin
+BASEDIR=#{install_dirname}
+PKG=#{package_name}
+NAME=#{package_name}
+ARCH=#{`uname -p`.chomp}
+VERSION=#{pkgmk_version}
+CATEGORY=application
+DESC=#{description}
+VENDOR=#{maintainer}
+EMAIL=#{maintainer}
+PSTAMP=#{`hostname`.chomp + Time.now.utc.iso8601}
+      EOF
+
+      File.open "/tmp/pkgmk/pkginfo", "w+" do |f|
+        f.write pkginfo_content
+      end
+
+      FileUtils.cp "#{package_scripts_path}/postinst", "/tmp/pkgmk/postinstall"
+      FileUtils.cp "#{package_scripts_path}/postrm", "/tmp/pkgmk/postremove"
+
+      shellout!("pkgmk -o -r #{install_dirname} -d /tmp/pkgmk -f /tmp/pkgmk/Prototype", :timeout => 3600)
+
+      system "pkgchk -vd /tmp/pkgmk chef"
+
+      system "pkgtrans /tmp/pkgmk /var/cache/omnibus/pkg/#{output_package("pkgmk")} chef"
     end
 
     # Runs the necessary command to make a package with fpm. As a side-effect,
@@ -672,6 +782,8 @@ module Omnibus
                 run_msi
               elsif pkg_type == "bff"
                 run_bff
+              elsif pkg_type == "pkgmk"
+                run_pkgmk
               else # pkg_type == "fpm"
                 run_fpm(pkg_type)
               end

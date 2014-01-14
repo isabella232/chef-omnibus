@@ -17,6 +17,7 @@
 
 require 'forwardable'
 require 'omnibus/exceptions'
+require 'ostruct'
 
 module Omnibus
   class Builder
@@ -31,6 +32,7 @@ module Omnibus
       # @todo def_delegators :@builder, :patch, :command, :ruby, ...
 
       def_delegator :@builder, :patch
+      def_delegator :@builder, :erb
       def_delegator :@builder, :command
       def_delegator :@builder, :ruby
       def_delegator :@builder, :gem
@@ -38,6 +40,7 @@ module Omnibus
       def_delegator :@builder, :rake
       def_delegator :@builder, :block
       def_delegator :@builder, :name
+      def_delegator :@builder, :project_root
 
       def initialize(builder, software)
         @builder, @software = builder, software
@@ -149,6 +152,25 @@ module Omnibus
       end
     end
 
+    def erb(*args)
+      args = args.dup.pop
+
+      source_path = File.expand_path("#{Omnibus.project_root}/config/templates/#{name}/#{args[:source]}")
+
+      unless File.exists?(source_path)
+        raise MissingTemplate.new(args[:source], "#{Omnibus.project_root}/config/templates/#{name}")
+      end
+
+      block do
+        template = ERB.new(File.new(source_path).read, nil, "%")
+        File.open(args[:dest], "w") do |file|
+          file.write(template.result(OpenStruct.new(args[:vars]).instance_eval { binding }))
+        end
+
+        File.chmod(args[:mode], args[:dest])
+      end
+    end
+
     # @todo all these ruby commands (ruby, gem, bundle, rake) could
     #   all be collapsed into a single underlying implementation, since
     #   they all just differ on the executable being called
@@ -170,6 +192,10 @@ module Omnibus
 
     def block(&rb_block)
       @build_commands << rb_block
+    end
+
+    def project_root
+      Omnibus.project_root
     end
 
     def project_dir
@@ -213,6 +239,10 @@ module Omnibus
       raise
     end
 
+    def build_retries
+      Omnibus.config[:build_retries]
+    end
+
     def execute_sh(cmd)
       retries ||= 0
       shell = nil
@@ -243,10 +273,11 @@ module Omnibus
         shell.error!
       end
     rescue Exception => e
+      raise if build_retries.nil? || build_retries == 0
       # Getting lots of errors from github, particularly with erlang/rebar
       # projects fetching tons of deps via git all the time. This isn't a
       # particularly elegant way to solve that problem. But it should work.
-      if retries >= 3
+      if retries >= build_retries
         ErrorReporter.new(e, self).explain("Failed to build #{name} while running `#{cmd_string}` with #{cmd_opts_for_display}")
         raise
       else
