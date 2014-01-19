@@ -42,9 +42,11 @@ module Omnibus
                            /libdb-5\.3\.so/,
                            /libdl\.so/,
                            /libffi\.so/,
+                           /libgcc_s\.so/,
                            /libgdbm\.so/,
                            /libm\.so/,
                            /libnsl\.so/,
+                           /libstdc\+\+\.so/,
                            /libpthread\.so/,
                            /librt\.so/,
                            /libutil\.so/
