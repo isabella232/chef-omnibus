@@ -141,6 +141,8 @@ module Omnibus
       /libkvm\.so/,
       /libprocstat\.so/,
       /libmd\.so/,
+      /libcxxrt\.so/,
+      /libc\+\+\.so/,
     ].freeze
 
     class << self
